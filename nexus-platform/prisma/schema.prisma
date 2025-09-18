@@ -1,0 +1,72 @@
+// Simple Database Schema for Authentication
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Company/Tenant model
+model Company {
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  subdomain             String    @unique
+  email                 String    @unique
+  logo                  String?
+  
+  // Subscription & Billing
+  subscriptionStatus    String    @default("ACTIVE")
+  subscriptionPlan      String    @default("basic")
+  trialEndsAt          DateTime?
+  
+  // Settings (as JSON string)
+  settings              String    @default("{}")
+  timezone              String    @default("UTC")
+  dateFormat            String    @default("MM/DD/YYYY")
+  
+  // Metadata
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  
+  // Relations
+  users                User[]
+  
+  @@map("companies")
+}
+
+// User model for authentication
+model User {
+  id            String     @id @default(cuid())
+  companyId     String
+  email         String
+  name          String
+  passwordHash  String
+  isActive      Boolean    @default(true)
+  emailVerified Boolean    @default(false)
+  position      String?
+  department    String?
+  
+  // Relations
+  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  @@unique([companyId, email])
+  @@map("users")
+}
+
+// Session model for authentication
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@map("sessions")
+}

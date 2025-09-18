@@ -1,0 +1,92 @@
+# Nexus Workflow Platform - Local Development
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: nexus-postgres-dev
+    environment:
+      POSTGRES_DB: nexus_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    command: postgres -c 'shared_preload_libraries=pg_stat_statements'
+
+  # Redis for session management
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Database Setup (for initialization only)
+  db-setup:
+    image: node:18-alpine
+    container_name: nexus-db-setup
+    working_dir: /app
+    environment:
+      - DATABASE_URL=postgresql://postgres@nexus-postgres-dev:5432/nexus_dev?sslmode=disable
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+    command: sh -c "apk add --no-cache openssl && npm install && npx prisma generate && npx prisma db push && npx tsx prisma/seed.ts"
+    profiles:
+      - setup
+
+  # Next.js Application (Development)
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: nexus-app-dev
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres@nexus-postgres-dev:5432/nexus_dev
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_SECRET=dev-secret-key-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    command: npm run dev
+
+  # Prisma Studio (Database GUI)
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: nexus-prisma-studio
+    environment:
+      - DATABASE_URL=postgresql://nexus_user:nexus_password@postgres:5432/nexus_dev
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+    command: npx prisma studio --hostname 0.0.0.0
+    profiles:
+      - studio
+
+volumes:
+  postgres_data:
+  redis_data:

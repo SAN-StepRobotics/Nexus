@@ -1,0 +1,326 @@
+// Nexus Workflow Management Platform
+// Database Schema with Multi-Tenant Architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Company/Tenant model
+model Company {
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  subdomain             String    @unique
+  email                 String    @unique
+  logo                  String?
+  
+  // Google Drive Integration
+  driveEnabled          Boolean   @default(false)
+  driveRefreshToken     String?   @db.Text
+  driveAccessToken      String?   @db.Text
+  driveRootFolderId     String?
+  
+  // Subscription & Billing
+  subscriptionStatus    SubscriptionStatus @default(TRIAL)
+  subscriptionPlan      String    @default("basic")
+  trialEndsAt          DateTime?
+  
+  // Settings
+  settings              Json      @default("{}")
+  timezone              String    @default("UTC")
+  dateFormat            String    @default("MM/DD/YYYY")
+  
+  // Metadata
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  
+  // Relations
+  users                User[]
+  roles                Role[]
+  categories           Category[]
+  tasks                Task[]
+  taskSubmissions      TaskSubmission[]
+  auditLogs            AuditLog[]
+  
+  @@map("companies")
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+// User model with role-based permissions
+model User {
+  id                   String    @id @default(cuid())
+  companyId            String
+  email                String
+  name                 String
+  avatar               String?
+  
+  // Authentication
+  passwordHash         String?
+  isActive             Boolean   @default(true)
+  emailVerified        Boolean   @default(false)
+  lastLoginAt          DateTime?
+  
+  // Google Drive Integration
+  driveUserId          String?
+  driveFolderId        String?
+  
+  // Profile
+  position             String?
+  department           String?
+  phoneNumber          String?
+  
+  // System
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String?
+  
+  // Relations
+  company              Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role                 Role      @relation(fields: [roleId], references: [id])
+  roleId               String
+  
+  assignedTasks        Task[]    @relation("TaskAssignee")
+  createdTasks         Task[]    @relation("TaskCreator")
+  taskSubmissions      TaskSubmission[]
+  reviewedSubmissions  TaskSubmission[] @relation("TaskReviewer")
+  auditLogs            AuditLog[]
+  
+  @@unique([companyId, email])
+  @@map("users")
+}
+
+// Dynamic role system
+model Role {
+  id           String   @id @default(cuid())
+  companyId    String
+  name         String
+  description  String?
+  permissions  Json     @default("[]")
+  isSystemRole Boolean  @default(false)
+  color        String   @default("#6B7280")
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users        User[]
+  
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+// Dynamic categories system
+model Category {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  color       String   @default("#3B82F6")
+  icon        String   @default("folder")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  
+  // Relations
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  
+  @@unique([companyId, name])
+  @@map("categories")
+}
+
+// Flexible task system
+model Task {
+  id              String        @id @default(cuid())
+  companyId       String
+  categoryId      String
+  name            String
+  description     String        @db.Text
+  
+  // Assignment
+  assignedToId    String
+  createdById     String
+  
+  // Frequency & Scheduling
+  frequencyType   FrequencyType
+  customInterval  Int?          // For custom frequency (days)
+  
+  // Status & Priority
+  status          TaskStatus    @default(ACTIVE)
+  priority        Priority      @default(MEDIUM)
+  
+  // Dates
+  dueDate         DateTime?
+  nextDueDate     DateTime?
+  lastCompletedAt DateTime?
+  
+  // Points & Settings
+  points          Int           @default(5)
+  isRecurring     Boolean       @default(true)
+  allowWeekends   Boolean       @default(false)
+  
+  // Metadata
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category        Category      @relation(fields: [categoryId], references: [id])
+  assignedTo      User          @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy       User          @relation("TaskCreator", fields: [createdById], references: [id])
+  submissions     TaskSubmission[]
+  
+  @@map("tasks")
+}
+
+enum FrequencyType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+  ONE_TIME
+}
+
+enum TaskStatus {
+  ACTIVE
+  DUE_SOON
+  OVERDUE
+  COMPLETED
+  PAUSED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Task submissions with file management
+model TaskSubmission {
+  id               String           @id @default(cuid())
+  companyId        String
+  taskId           String
+  userId           String
+  
+  // Submission Content
+  description      String           @db.Text
+  links            Json             @default("[]")
+  files            Json             @default("[]")
+  
+  // Review Process
+  status           SubmissionStatus @default(PENDING)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?          @db.Text
+  
+  // Scoring
+  points           Int              @default(0)
+  isOnTime         Boolean          @default(true)
+  
+  // Metadata
+  submittedAt      DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  
+  // Relations
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  task             Task             @relation(fields: [taskId], references: [id])
+  user             User             @relation(fields: [userId], references: [id])
+  reviewedBy       User?            @relation("TaskReviewer", fields: [reviewedById], references: [id])
+  
+  @@map("task_submissions")
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  OVERDUE
+}
+
+// Audit logging for compliance
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String?
+  action    String
+  resource  String
+  details   Json     @default("{}")
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  
+  // Relations
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User?   @relation(fields: [userId], references: [id])
+  
+  @@map("audit_logs")
+}
+
+// Session management
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@map("sessions")
+}
+
+// Notification system
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String            @db.Text
+  isRead    Boolean           @default(false)
+  data      Json              @default("{}")
+  createdAt DateTime          @default(now())
+  
+  @@map("notifications")
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  SUBMISSION_APPROVED
+  SUBMISSION_REJECTED
+  SYSTEM_ANNOUNCEMENT
+}
+
+// File management for Drive integration
+model DriveFile {
+  id            String   @id @default(cuid())
+  companyId     String
+  driveFileId   String
+  fileName      String
+  mimeType      String
+  size          BigInt
+  downloadUrl   String?
+  webViewUrl    String?
+  parentFolderId String?
+  uploadedBy    String
+  createdAt     DateTime @default(now())
+  
+  @@unique([companyId, driveFileId])
+  @@map("drive_files")
+}
