@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 export default function SignInPage() {
   const [formData, setFormData] = useState({
+    companySlug: '',
     email: '',
     password: ''
   })
@@ -21,30 +23,17 @@ export default function SignInPage() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/auth/signin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
+      const result = await signIn('credentials', {
+        redirect: false,
+        companySlug: formData.companySlug,
+        email: formData.email,
+        password: formData.password,
       })
 
-      const data = await response.json()
-      console.log('Sign in response:', { status: response.status, data })
-
-      if (response.ok) {
-        console.log('Sign in successful, waiting for cookie to be set...')
-        // Wait a moment for the cookie to be set, then redirect
-        setTimeout(() => {
-          console.log('Redirecting to dashboard...')
-          window.location.href = '/dashboard'
-        }, 100)
-      } else {
-        console.error('Sign in failed:', data)
-        setError(data.error || 'Failed to sign in')
+      if (result?.error) {
+        setError(result.error === 'CredentialsSignin' ? 'Invalid credentials or company slug' : result.error)
+      } else if (result?.ok) {
+        router.push('/dashboard')
       }
     } catch (err) {
       setError('Something went wrong. Please try again.')
@@ -83,6 +72,27 @@ export default function SignInPage() {
           )}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
+            <div>
+              <label htmlFor="companySlug" className="block text-sm font-medium text-gray-700">
+                Company Slug
+              </label>
+              <div className="mt-1">
+                <input
+                  id="companySlug"
+                  name="companySlug"
+                  type="text"
+                  required
+                  value={formData.companySlug}
+                  onChange={handleChange}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="your-company-slug"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                The unique identifier for your company (e.g., "acme-corp")
+              </p>
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
@@ -156,11 +166,12 @@ export default function SignInPage() {
                 <span className="px-2 bg-white text-gray-500">Demo Credentials</span>
               </div>
             </div>
-            
+
             <div className="mt-4 text-sm text-gray-500 text-center">
               <p>Create your own account above, or use:</p>
               <p className="font-mono text-xs mt-2">
-                Email: test@example.com<br />
+                Company Slug: api-test-company<br />
+                Email: admin@apitest.com<br />
                 Password: test123
               </p>
             </div>

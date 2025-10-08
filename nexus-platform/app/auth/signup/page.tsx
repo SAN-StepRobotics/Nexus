@@ -44,8 +44,9 @@ export default function SignUpPage() {
       const data = await response.json()
 
       if (response.ok) {
-        // Redirect to login page with success message
-        router.push('/auth/signin?message=Account created successfully')
+        // Redirect to login page with success message and company slug
+        const companySlug = data.company?.slug || ''
+        router.push(`/auth/signin?message=Account created successfully! Your company slug is: ${companySlug}`)
       } else {
         setError(data.error || 'Failed to create account')
       }
