@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { DEFAULT_PERMISSIONS, DEFAULT_ROLE_DESCRIPTIONS } from '@/lib/auth'
+import { initializeCompanyStorage } from '@/lib/file-storage'
 
 const prisma = new PrismaClient()
 
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12)
 
-    // Create company and user in a transaction
+    // Create company, roles, and user in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create company
       const company = await tx.company.create({
@@ -70,10 +72,33 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      // Create user
+      // Create Admin role
+      const adminRole = await tx.role.create({
+        data: {
+          companyId: company.id,
+          name: 'Admin',
+          permissions: JSON.stringify(DEFAULT_PERMISSIONS.ADMIN),
+          description: DEFAULT_ROLE_DESCRIPTIONS.ADMIN,
+          isDefault: false
+        }
+      })
+
+      // Create Employee role (default)
+      const employeeRole = await tx.role.create({
+        data: {
+          companyId: company.id,
+          name: 'Employee',
+          permissions: JSON.stringify(DEFAULT_PERMISSIONS.EMPLOYEE),
+          description: DEFAULT_ROLE_DESCRIPTIONS.EMPLOYEE,
+          isDefault: true
+        }
+      })
+
+      // Create user with Admin role
       const user = await tx.user.create({
         data: {
           companyId: company.id,
+          roleId: adminRole.id,
           email: email.toLowerCase(),
           name: name,
           passwordHash,
@@ -84,8 +109,16 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      return { company, user }
+      return { company, user, adminRole, employeeRole }
     })
+
+    // Initialize company storage structure
+    try {
+      await initializeCompanyStorage(result.company.id)
+    } catch (storageError) {
+      console.error('Failed to initialize storage:', storageError)
+      // Continue even if storage init fails - can be retried later
+    }
 
     // Return success (without sensitive data)
     return NextResponse.json({

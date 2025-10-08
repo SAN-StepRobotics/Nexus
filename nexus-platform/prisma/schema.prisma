@@ -1,4 +1,4 @@
-// Simple Database Schema for Authentication
+// Database Schema for Local Authentication & File Management
 generator client {
   provider = "prisma-client-js"
 }
@@ -16,31 +16,56 @@ model Company {
   subdomain             String    @unique
   email                 String    @unique
   logo                  String?
-  
+
   // Subscription & Billing
   subscriptionStatus    String    @default("ACTIVE")
   subscriptionPlan      String    @default("basic")
   trialEndsAt          DateTime?
-  
+
   // Settings (as JSON string)
   settings              String    @default("{}")
   timezone              String    @default("UTC")
   dateFormat            String    @default("MM/DD/YYYY")
-  
+
   // Metadata
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
-  
+
   // Relations
   users                User[]
-  
+  roles                Role[]
+  files                File[]
+  categories           Category[]
+  tasks                Task[]
+
   @@map("companies")
+}
+
+// Role model for permissions
+model Role {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String   // Admin, Employee, Manager, etc.
+  permissions String   @default("[]") // JSON array of permission strings
+  description String?
+  isDefault   Boolean  @default(false)
+
+  // Relations
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users       User[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@map("roles")
 }
 
 // User model for authentication
 model User {
   id            String     @id @default(cuid())
   companyId     String
+  roleId        String
   email         String
   name          String
   passwordHash  String
@@ -48,14 +73,20 @@ model User {
   emailVerified Boolean    @default(false)
   position      String?
   department    String?
-  
+  avatar        String?
+  lastLoginAt   DateTime?
+
   // Relations
   company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  role          Role       @relation(fields: [roleId], references: [id])
+  files         File[]
+  taskAssignments TaskAssignment[]
+  submissions   Submission[]
+
   // Metadata
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
-  
+
   @@unique([companyId, email])
   @@map("users")
 }
@@ -67,6 +98,112 @@ model Session {
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
-  
+
   @@map("sessions")
+}
+
+// File storage model (local file system)
+model File {
+  id           String   @id @default(cuid())
+  companyId    String
+  uploadedById String
+  fileName     String
+  originalName String
+  mimeType     String
+  size         Int
+  storagePath  String   // Local file system path
+  category     String?
+  description  String?
+
+  // Relations
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("files")
+}
+
+// Category model for organizing tasks
+model Category {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  color       String?  // For UI purposes
+  icon        String?
+  isActive    Boolean  @default(true)
+
+  // Relations
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@map("categories")
+}
+
+// Task model
+model Task {
+  id             String   @id @default(cuid())
+  companyId      String
+  categoryId     String
+  title          String
+  description    String?
+  priority       String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status         String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
+  dueDate        DateTime?
+  recurrence     String?  // DAILY, WEEKLY, MONTHLY, etc.
+  attachmentUrl  String?
+
+  // Relations
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category       Category @relation(fields: [categoryId], references: [id])
+  assignments    TaskAssignment[]
+  submissions    Submission[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("tasks")
+}
+
+// Task assignment to users
+model TaskAssignment {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  assignedAt DateTime @default(now())
+
+  // Relations
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@map("task_assignments")
+}
+
+// Submission model for task completions
+model Submission {
+  id          String   @id @default(cuid())
+  taskId      String
+  userId      String
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  notes       String?
+  filesPath   String?  // JSON array of file paths
+  submittedAt DateTime @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?
+
+  // Relations
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("submissions")
 }

@@ -58,7 +58,7 @@ export const authOptions: NextAuthOptions = {
           }
 
           const isPasswordValid = await bcrypt.compare(credentials.password, user.passwordHash)
-          
+
           if (!isPasswordValid) {
             throw new Error('Invalid credentials')
           }
@@ -69,6 +69,9 @@ export const authOptions: NextAuthOptions = {
             data: { lastLoginAt: new Date() }
           })
 
+          // Parse permissions from JSON string
+          const permissions = user.role.permissions ? JSON.parse(user.role.permissions) : []
+
           return {
             id: user.id,
             email: user.email,
@@ -77,7 +80,7 @@ export const authOptions: NextAuthOptions = {
             companyId: user.companyId,
             companySlug: company.slug,
             role: user.role.name,
-            permissions: user.role.permissions as string[]
+            permissions: permissions
           }
         } catch (error) {
           console.error('Auth error:', error)
@@ -133,20 +136,32 @@ export function hasAllPermissions(userPermissions: string[], requiredPermissions
   return requiredPermissions.every(permission => userPermissions.includes(permission))
 }
 
+export function isAdmin(userRole: string): boolean {
+  return userRole?.toLowerCase() === 'admin'
+}
+
 // Default role permissions
 export const DEFAULT_PERMISSIONS = {
   ADMIN: [
-    'admin.all'
-  ],
-  MANAGER: [
-    'users.read',
+    'admin.all',
+    'users.create', 'users.read', 'users.update', 'users.delete',
+    'roles.create', 'roles.read', 'roles.update', 'roles.delete',
     'tasks.create', 'tasks.read', 'tasks.update', 'tasks.delete',
-    'categories.create', 'categories.read', 'categories.update',
-    'submissions.review', 'submissions.read',
-    'analytics.read', 'analytics.export'
+    'categories.create', 'categories.read', 'categories.update', 'categories.delete',
+    'submissions.create', 'submissions.read', 'submissions.update', 'submissions.delete', 'submissions.review',
+    'files.create', 'files.read', 'files.update', 'files.delete',
+    'analytics.read', 'analytics.export',
+    'settings.read', 'settings.update'
   ],
   EMPLOYEE: [
     'tasks.read',
-    'submissions.create', 'submissions.read'
+    'submissions.create', 'submissions.read',
+    'files.create', 'files.read'
   ]
+}
+
+// Default role descriptions
+export const DEFAULT_ROLE_DESCRIPTIONS = {
+  ADMIN: 'Full system access with ability to manage users, tasks, and all company settings',
+  EMPLOYEE: 'Standard employee access to view tasks and submit work'
 }
